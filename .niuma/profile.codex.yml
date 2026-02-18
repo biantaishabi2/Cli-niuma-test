@@ -1,0 +1,20 @@
+ai:
+  default: codex
+
+  providers:
+    codex:
+      cmd: "codex exec --sandbox workspace-write -C {workdir} - < {prompt_file}"
+      cmd_agent: "codex exec --sandbox workspace-write -C {workdir} - < {prompt_file}"
+
+  discussion:
+    providers:
+      - codex
+      - codex
+
+  implementation:
+    provider: codex
+
+workflow:
+  max_discussion_rounds: 5
+  visible_round_interval: 1
+  visible_only_on_diff: true

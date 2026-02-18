@@ -1,0 +1,20 @@
+ai:
+  default: stub
+
+  providers:
+    stub:
+      cmd: "bash .niuma/mock_provider.sh {prompt_file}"
+      cmd_agent: "bash .niuma/mock_provider.sh {prompt_file}"
+
+  discussion:
+    providers:
+      - stub
+      - stub
+
+  implementation:
+    provider: stub
+
+workflow:
+  max_discussion_rounds: 5
+  visible_round_interval: 1
+  visible_only_on_diff: true

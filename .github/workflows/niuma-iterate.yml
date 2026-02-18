@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   iterate-from-review:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.NIUMA_TEST_RUNNER || 'ubuntu-latest' }}
     if: >
       github.event_name == 'issues' &&
       github.event.label.name == 'bot:pr-needs-fix' &&
@@ -38,6 +38,32 @@ jobs:
         with:
           go-version: '1.24'
           cache-dependency-path: cli-src/automation/niuma/go.sum
+
+      - name: Select niuma provider profile
+        env:
+          NIUMA_TEST_PROVIDER_MODE: ${{ vars.NIUMA_TEST_PROVIDER_MODE || 'stub' }}
+        run: |
+          MODE="$NIUMA_TEST_PROVIDER_MODE"
+          case "$MODE" in
+            stub) cp .niuma/profile.stub.yml .niuma.yml ;;
+            codex) cp .niuma/profile.codex.yml .niuma.yml ;;
+            *)
+              echo "unsupported NIUMA_TEST_PROVIDER_MODE: $MODE"
+              exit 1
+              ;;
+          esac
+          echo "provider profile selected: $MODE"
+
+      - name: Validate provider runtime
+        env:
+          NIUMA_TEST_PROVIDER_MODE: ${{ vars.NIUMA_TEST_PROVIDER_MODE || 'stub' }}
+        run: |
+          if [ "$NIUMA_TEST_PROVIDER_MODE" = "codex" ]; then
+            command -v codex >/dev/null || {
+              echo "codex CLI not found on runner; set NIUMA_TEST_PROVIDER_MODE=stub or use self-hosted with codex installed."
+              exit 1
+            }
+          fi
 
       - name: Tidy modules
         run: |
@@ -85,7 +111,7 @@ jobs:
             --repo-dir "$WORKSPACE"
 
   iterate-from-human:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.NIUMA_TEST_RUNNER || 'ubuntu-latest' }}
     if: >
       github.event_name == 'pull_request_review' &&
       github.event.review.state == 'changes_requested' &&
