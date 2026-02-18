@@ -1,0 +1,89 @@
+name: niuma - Discussion Check
+
+on:
+  issues:
+    types: [labeled]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: "Issue 编号"
+        required: true
+        type: number
+      max_discussion_rounds:
+        description: "最大讨论轮次（1-20）"
+        required: false
+        default: 5
+        type: number
+
+jobs:
+  discussion-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: niuma-discuss-${{ github.repository }}-${{ github.event_name == 'workflow_dispatch' && format('{0}', inputs.issue) || format('{0}', github.event.issue.number) }}
+      cancel-in-progress: true
+    if: >
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event.issue.pull_request == null &&
+      (
+        (github.event_name == 'issues' && github.event.label.name == 'bot:needs-discussion') ||
+        (github.event_name == 'issue_comment' &&
+          !endsWith(github.actor, '[bot]') &&
+          !contains(github.event.comment.body || '', '<!-- BOT:'))
+      ))
+    permissions:
+      issues: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.NIUMA_PAT }}
+          fetch-depth: 0
+
+      - uses: actions/checkout@v4
+        with:
+          repository: biantaishabi2/Cli
+          token: ${{ secrets.NIUMA_PAT }}
+          path: cli-src
+          fetch-depth: 1
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: cli-src/automation/niuma/go.sum
+
+      - name: Build niuma
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/.tmp"
+          (
+            cd cli-src/automation/niuma
+            go build -o "$GITHUB_WORKSPACE/.tmp/niuma" ./cmd/niuma
+          )
+          echo "NIUMA_BIN=$GITHUB_WORKSPACE/.tmp/niuma" >> "$GITHUB_ENV"
+
+      - name: Check Discussion
+        env:
+          GITHUB_TOKEN: ${{ secrets.NIUMA_PAT }}
+          REPO: ${{ github.repository }}
+          ISSUE_NUMBER_INPUT: ${{ inputs.issue }}
+          MAX_DISCUSSION_ROUNDS: ${{ inputs.max_discussion_rounds }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ISSUE_NUMBER="$ISSUE_NUMBER_INPUT"
+          else
+            ISSUE_NUMBER="${{ github.event.issue.number }}"
+          fi
+
+          LABELS=$(gh issue view "$ISSUE_NUMBER" --json labels -q '.labels[].name')
+          if echo "$LABELS" | grep -q "bot:needs-discussion"; then
+            EXTRA_ARGS=()
+            if [ -n "$MAX_DISCUSSION_ROUNDS" ]; then
+              EXTRA_ARGS+=(--max-discussion-rounds "$MAX_DISCUSSION_ROUNDS")
+            fi
+            "$NIUMA_BIN" discuss \
+              --repo "$REPO" \
+              --issue "$ISSUE_NUMBER" \
+              "${EXTRA_ARGS[@]}"
+          fi
