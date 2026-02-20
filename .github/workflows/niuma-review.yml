@@ -4,101 +4,16 @@ on:
   issues:
     types: [labeled]
 
-concurrency:
-  group: niuma-review-${{ github.event.issue.number }}
-  cancel-in-progress: false
+permissions:
+  issues: write
+  pull-requests: write
 
 jobs:
   review:
-    runs-on: ${{ vars.NIUMA_TEST_RUNNER || 'ubuntu-latest' }}
     if: github.event.label.name == 'bot:pr-created'
-    permissions:
-      issues: write
-      pull-requests: write
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.NIUMA_PAT }}
-          fetch-depth: 0
-
-      - uses: actions/checkout@v4
-        with:
-          repository: biantaishabi2/Cli
-          token: ${{ secrets.NIUMA_PAT }}
-          path: cli-src
-          fetch-depth: 1
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.24'
-          cache-dependency-path: cli-src/automation/niuma/go.sum
-
-      - name: Select niuma provider profile
-        env:
-          NIUMA_TEST_PROVIDER_MODE: ${{ vars.NIUMA_TEST_PROVIDER_MODE || 'stub' }}
-        run: |
-          MODE="$NIUMA_TEST_PROVIDER_MODE"
-          case "$MODE" in
-            stub) cp .niuma/profile.stub.yml .niuma.yml ;;
-            codex) cp .niuma/profile.codex.yml .niuma.yml ;;
-            *)
-              echo "unsupported NIUMA_TEST_PROVIDER_MODE: $MODE"
-              exit 1
-              ;;
-          esac
-          echo "provider profile selected: $MODE"
-
-      - name: Validate provider runtime
-        env:
-          NIUMA_TEST_PROVIDER_MODE: ${{ vars.NIUMA_TEST_PROVIDER_MODE || 'stub' }}
-        run: |
-          if [ "$NIUMA_TEST_PROVIDER_MODE" = "codex" ]; then
-            command -v codex >/dev/null || {
-              echo "codex CLI not found on runner; set NIUMA_TEST_PROVIDER_MODE=stub or use self-hosted with codex installed."
-              exit 1
-            }
-          fi
-
-      - name: Tidy modules
-        run: |
-          (
-            cd cli-src/automation/niuma
-            go mod tidy
-          )
-
-      - name: Build niuma
-        run: |
-          mkdir -p "$GITHUB_WORKSPACE/.tmp"
-          (
-            cd cli-src/automation/niuma
-            go build -o "$GITHUB_WORKSPACE/.tmp/niuma" ./cmd/niuma
-          )
-          echo "NIUMA_BIN=$GITHUB_WORKSPACE/.tmp/niuma" >> "$GITHUB_ENV"
-
-      - name: Find PR Number
-        id: find_pr
-        env:
-          GITHUB_TOKEN: ${{ secrets.NIUMA_PAT }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
-          REPO: ${{ github.repository }}
-        run: |
-          PR_NUMBER=$(gh api "repos/${REPO}/issues/${ISSUE_NUMBER}/comments?per_page=100&sort=created&direction=desc" \
-            --jq '.[].body | select(contains("BOT:PR_CREATED"))' | grep -Eo 'pr=[0-9]+' | sed 's/pr=//' | head -1)
-          if [ -z "$PR_NUMBER" ]; then
-            echo "::warning::未在 issue #${ISSUE_NUMBER} 的评论中找到 PR 号"
-          fi
-          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
-
-      - name: AI Self-Review
-        if: steps.find_pr.outputs.pr_number != ''
-        env:
-          GITHUB_TOKEN: ${{ secrets.NIUMA_PAT }}
-          REPO: ${{ github.repository }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
-          PR_NUMBER: ${{ steps.find_pr.outputs.pr_number }}
-        run: |
-          "$NIUMA_BIN" review \
-            --repo "$REPO" \
-            --issue "$ISSUE_NUMBER" \
-            --pr "$PR_NUMBER"
+    uses: biantaishabi2/Cli/.github/workflows/niuma-review-reusable.yml@master
+    with:
+      repo: ${{ github.repository }}
+      issue_number: ${{ format('{0}', github.event.issue.number) }}
+      build_niuma: false
+    secrets: inherit

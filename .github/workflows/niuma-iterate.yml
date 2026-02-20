@@ -6,147 +6,39 @@ on:
   pull_request_review:
     types: [submitted]
 
-concurrency:
-  group: niuma-iterate-${{ github.event.issue.number || github.event.pull_request.number }}
-  cancel-in-progress: false
+permissions:
+  issues: write
+  pull-requests: write
+  contents: write
 
 jobs:
-  iterate-from-review:
-    runs-on: ${{ vars.NIUMA_TEST_RUNNER || 'ubuntu-latest' }}
+  # AI 自审不通过 → 自动迭代
+  call-iterate-from-review:
     if: >
       github.event_name == 'issues' &&
       github.event.label.name == 'bot:pr-needs-fix' &&
       github.event.issue.state == 'open'
-    permissions:
-      issues: write
-      pull-requests: write
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.NIUMA_PAT }}
-          fetch-depth: 0
+    uses: biantaishabi2/Cli/.github/workflows/niuma-iterate-reusable.yml@master
+    with:
+      repo: ${{ github.repository }}
+      issue_number: ${{ format('{0}', github.event.issue.number) }}
+      trigger_source: review
+      build_niuma: false
+      gate_max_retries: ${{ vars.NIUMA_INTEGRATION_GATE_MAX_RETRIES || '2' }}
+    secrets: inherit
 
-      - uses: actions/checkout@v4
-        with:
-          repository: biantaishabi2/Cli
-          token: ${{ secrets.NIUMA_PAT }}
-          path: cli-src
-          fetch-depth: 1
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.24'
-          cache-dependency-path: cli-src/automation/niuma/go.sum
-
-      - name: Select niuma provider profile
-        env:
-          NIUMA_TEST_PROVIDER_MODE: ${{ vars.NIUMA_TEST_PROVIDER_MODE || 'stub' }}
-        run: |
-          MODE="$NIUMA_TEST_PROVIDER_MODE"
-          case "$MODE" in
-            stub) cp .niuma/profile.stub.yml .niuma.yml ;;
-            codex) cp .niuma/profile.codex.yml .niuma.yml ;;
-            *)
-              echo "unsupported NIUMA_TEST_PROVIDER_MODE: $MODE"
-              exit 1
-              ;;
-          esac
-          echo "provider profile selected: $MODE"
-
-      - name: Validate provider runtime
-        env:
-          NIUMA_TEST_PROVIDER_MODE: ${{ vars.NIUMA_TEST_PROVIDER_MODE || 'stub' }}
-        run: |
-          if [ "$NIUMA_TEST_PROVIDER_MODE" = "codex" ]; then
-            command -v codex >/dev/null || {
-              echo "codex CLI not found on runner; set NIUMA_TEST_PROVIDER_MODE=stub or use self-hosted with codex installed."
-              exit 1
-            }
-          fi
-
-      - name: Tidy modules
-        run: |
-          (
-            cd cli-src/automation/niuma
-            go mod tidy
-          )
-
-      - name: Build niuma
-        run: |
-          mkdir -p "$GITHUB_WORKSPACE/.tmp"
-          (
-            cd cli-src/automation/niuma
-            go build -o "$GITHUB_WORKSPACE/.tmp/niuma" ./cmd/niuma
-          )
-          echo "NIUMA_BIN=$GITHUB_WORKSPACE/.tmp/niuma" >> "$GITHUB_ENV"
-
-      - name: Find PR Number
-        id: find_pr
-        env:
-          GITHUB_TOKEN: ${{ secrets.NIUMA_PAT }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
-          REPO: ${{ github.repository }}
-        run: |
-          PR_NUMBER=$(gh api "repos/${REPO}/issues/${ISSUE_NUMBER}/comments?per_page=100&sort=created&direction=desc" \
-            --jq '.[].body | select(contains("BOT:PR_CREATED"))' | grep -Eo 'pr=[0-9]+' | sed 's/pr=//' | head -1)
-          if [ -z "$PR_NUMBER" ]; then
-            echo "::warning::未在 issue #${ISSUE_NUMBER} 的评论中找到 PR 号"
-          fi
-          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
-
-      - name: Iterate on Review
-        if: steps.find_pr.outputs.pr_number != ''
-        env:
-          GITHUB_TOKEN: ${{ secrets.NIUMA_PAT }}
-          REPO: ${{ github.repository }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
-          PR_NUMBER: ${{ steps.find_pr.outputs.pr_number }}
-          WORKSPACE: ${{ github.workspace }}
-        run: |
-          "$NIUMA_BIN" iterate \
-            --repo "$REPO" \
-            --issue "$ISSUE_NUMBER" \
-            --pr "$PR_NUMBER" \
-            --repo-dir "$WORKSPACE"
-
-  iterate-from-human:
-    runs-on: ${{ vars.NIUMA_TEST_RUNNER || 'ubuntu-latest' }}
+  # 人工 PR review changes_requested → 提取 issue 号
+  extract-issue-from-pr:
+    runs-on: self-hosted
     if: >
       github.event_name == 'pull_request_review' &&
       github.event.review.state == 'changes_requested' &&
       github.event.pull_request.state == 'open'
+    outputs:
+      issue_number: ${{ steps.extract.outputs.issue_number }}
     permissions:
-      issues: write
-      pull-requests: write
-      contents: write
+      pull-requests: read
     steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.NIUMA_PAT }}
-          fetch-depth: 0
-
-      - uses: actions/checkout@v4
-        with:
-          repository: biantaishabi2/Cli
-          token: ${{ secrets.NIUMA_PAT }}
-          path: cli-src
-          fetch-depth: 1
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.24'
-          cache-dependency-path: cli-src/automation/niuma/go.sum
-
-      - name: Build niuma
-        run: |
-          mkdir -p "$GITHUB_WORKSPACE/.tmp"
-          (
-            cd cli-src/automation/niuma
-            go build -o "$GITHUB_WORKSPACE/.tmp/niuma" ./cmd/niuma
-          )
-          echo "NIUMA_BIN=$GITHUB_WORKSPACE/.tmp/niuma" >> "$GITHUB_ENV"
-
       - name: Extract Issue Number from PR
         id: extract
         env:
@@ -155,20 +47,18 @@ jobs:
         run: |
           BODY=$(gh pr view "$PR_NUMBER" --json body -q '.body')
           ISSUE_NUMBER=$(echo "$BODY" | grep -Eo 'Closes #[0-9]+' | sed 's/Closes #//' | head -1)
-          echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
-          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "issue_number=$ISSUE_NUMBER" >> $GITHUB_OUTPUT
 
-      - name: Iterate on Review
-        if: steps.extract.outputs.issue_number != ''
-        env:
-          GITHUB_TOKEN: ${{ secrets.NIUMA_PAT }}
-          REPO: ${{ github.repository }}
-          ISSUE_NUMBER: ${{ steps.extract.outputs.issue_number }}
-          PR_NUMBER: ${{ steps.extract.outputs.pr_number }}
-          WORKSPACE: ${{ github.workspace }}
-        run: |
-          "$NIUMA_BIN" iterate \
-            --repo "$REPO" \
-            --issue "$ISSUE_NUMBER" \
-            --pr "$PR_NUMBER" \
-            --repo-dir "$WORKSPACE"
+  # 人工 PR review changes_requested → 调用 reusable 迭代
+  call-iterate-from-human:
+    needs: extract-issue-from-pr
+    if: needs.extract-issue-from-pr.outputs.issue_number != ''
+    uses: biantaishabi2/Cli/.github/workflows/niuma-iterate-reusable.yml@master
+    with:
+      repo: ${{ github.repository }}
+      issue_number: ${{ needs.extract-issue-from-pr.outputs.issue_number }}
+      pr_number: ${{ format('{0}', github.event.pull_request.number) }}
+      trigger_source: human
+      build_niuma: false
+      gate_max_retries: ${{ vars.NIUMA_INTEGRATION_GATE_MAX_RETRIES || '2' }}
+    secrets: inherit

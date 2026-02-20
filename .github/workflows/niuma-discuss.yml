@@ -16,107 +16,59 @@ on:
         required: false
         default: 5
         type: number
+      visible_round_interval:
+        description: "可见评论轮次间隔"
+        required: false
+        default: 1
+        type: number
+      visible_only_on_diff:
+        description: "仅差异变化时可见评论"
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  issues: write
+  contents: read
 
 jobs:
-  discussion-check:
-    runs-on: ${{ vars.NIUMA_TEST_RUNNER || 'ubuntu-latest' }}
-    timeout-minutes: 30
-    concurrency:
-      group: niuma-discuss-${{ github.repository }}-${{ github.event_name == 'workflow_dispatch' && format('{0}', inputs.issue) || format('{0}', github.event.issue.number) }}
-      cancel-in-progress: true
+  # issues.labeled → bot:needs-discussion
+  call-discuss-from-label:
     if: >
-      (github.event_name == 'workflow_dispatch') ||
-      (github.event.issue.pull_request == null &&
-      (
-        (github.event_name == 'issues' && github.event.label.name == 'bot:needs-discussion') ||
-        (github.event_name == 'issue_comment' &&
-          !endsWith(github.actor, '[bot]') &&
-          !contains(github.event.comment.body || '', '<!-- BOT:'))
-      ))
-    permissions:
-      issues: write
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.NIUMA_PAT }}
-          fetch-depth: 0
+      github.event_name == 'issues' &&
+      github.event.label.name == 'bot:needs-discussion' &&
+      github.event.issue.pull_request == null
+    uses: biantaishabi2/Cli/.github/workflows/niuma-discuss-reusable.yml@master
+    with:
+      repo: ${{ github.repository }}
+      issue_number: ${{ format('{0}', github.event.issue.number) }}
+      build_niuma: false
+    secrets: inherit
 
-      - uses: actions/checkout@v4
-        with:
-          repository: biantaishabi2/Cli
-          token: ${{ secrets.NIUMA_PAT }}
-          path: cli-src
-          fetch-depth: 1
+  # issue_comment.created → 非 bot 用户在非 PR 的 issue 上评论
+  call-discuss-from-comment:
+    if: >
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request == null &&
+      !endsWith(github.actor, '[bot]') &&
+      !contains(vars.BOT_ACTORS || '', github.actor) &&
+      !contains(github.event.comment.body || '', '<!-- BOT:')
+    uses: biantaishabi2/Cli/.github/workflows/niuma-discuss-reusable.yml@master
+    with:
+      repo: ${{ github.repository }}
+      issue_number: ${{ format('{0}', github.event.issue.number) }}
+      build_niuma: false
+    secrets: inherit
 
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.24'
-          cache-dependency-path: cli-src/automation/niuma/go.sum
-
-      - name: Select niuma provider profile
-        env:
-          NIUMA_TEST_PROVIDER_MODE: ${{ vars.NIUMA_TEST_PROVIDER_MODE || 'stub' }}
-        run: |
-          MODE="$NIUMA_TEST_PROVIDER_MODE"
-          case "$MODE" in
-            stub) cp .niuma/profile.stub.yml .niuma.yml ;;
-            codex) cp .niuma/profile.codex.yml .niuma.yml ;;
-            *)
-              echo "unsupported NIUMA_TEST_PROVIDER_MODE: $MODE"
-              exit 1
-              ;;
-          esac
-          echo "provider profile selected: $MODE"
-
-      - name: Validate provider runtime
-        env:
-          NIUMA_TEST_PROVIDER_MODE: ${{ vars.NIUMA_TEST_PROVIDER_MODE || 'stub' }}
-        run: |
-          if [ "$NIUMA_TEST_PROVIDER_MODE" = "codex" ]; then
-            command -v codex >/dev/null || {
-              echo "codex CLI not found on runner; set NIUMA_TEST_PROVIDER_MODE=stub or use self-hosted with codex installed."
-              exit 1
-            }
-          fi
-
-      - name: Tidy modules
-        run: |
-          (
-            cd cli-src/automation/niuma
-            go mod tidy
-          )
-
-      - name: Build niuma
-        run: |
-          mkdir -p "$GITHUB_WORKSPACE/.tmp"
-          (
-            cd cli-src/automation/niuma
-            go build -o "$GITHUB_WORKSPACE/.tmp/niuma" ./cmd/niuma
-          )
-          echo "NIUMA_BIN=$GITHUB_WORKSPACE/.tmp/niuma" >> "$GITHUB_ENV"
-
-      - name: Check Discussion
-        env:
-          GITHUB_TOKEN: ${{ secrets.NIUMA_PAT }}
-          REPO: ${{ github.repository }}
-          ISSUE_NUMBER_INPUT: ${{ inputs.issue }}
-          MAX_DISCUSSION_ROUNDS: ${{ inputs.max_discussion_rounds }}
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            ISSUE_NUMBER="$ISSUE_NUMBER_INPUT"
-          else
-            ISSUE_NUMBER="${{ github.event.issue.number }}"
-          fi
-
-          LABELS=$(gh issue view "$ISSUE_NUMBER" --json labels -q '.labels[].name')
-          if echo "$LABELS" | grep -q "bot:needs-discussion"; then
-            EXTRA_ARGS=()
-            if [ -n "$MAX_DISCUSSION_ROUNDS" ]; then
-              EXTRA_ARGS+=(--max-discussion-rounds "$MAX_DISCUSSION_ROUNDS")
-            fi
-            "$NIUMA_BIN" discuss \
-              --repo "$REPO" \
-              --issue "$ISSUE_NUMBER" \
-              "${EXTRA_ARGS[@]}"
-          fi
+  # workflow_dispatch → 手动触发
+  call-discuss-from-dispatch:
+    if: github.event_name == 'workflow_dispatch'
+    uses: biantaishabi2/Cli/.github/workflows/niuma-discuss-reusable.yml@master
+    with:
+      repo: ${{ github.repository }}
+      issue_number: ${{ format('{0}', inputs.issue) }}
+      max_discussion_rounds: ${{ inputs.max_discussion_rounds }}
+      visible_round_interval: ${{ inputs.visible_round_interval }}
+      visible_only_on_diff: ${{ inputs.visible_only_on_diff }}
+      build_niuma: false
+    secrets: inherit
