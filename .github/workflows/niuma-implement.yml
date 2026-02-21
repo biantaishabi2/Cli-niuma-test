@@ -16,6 +16,6 @@ jobs:
     with:
       repo: ${{ github.repository }}
       issue_number: ${{ format('{0}', github.event.issue.number) }}
-      build_niuma: false
-      gate_max_retries: ${{ vars.NIUMA_INTEGRATION_GATE_MAX_RETRIES || '2' }}
+      build_niuma: true
+      gate_max_retries: "1"
     secrets: inherit
