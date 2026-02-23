@@ -27,8 +27,6 @@ jobs:
       workflow_source_repo: biantaishabi2/Cli
       workflow_source_ref: master
       repo_dir: "."
-      label_whitelist: "bot:orchestrate,bot:queued,bot:pr-reviewable,bot:premerged"
-      enable_dispatch_wakeup: true
       event_id: ${{ github.event.client_payload.event_id || '' }}
       dedup_window_hours: 24
       concurrency_key: "niuma-orchestrate-${repo}"
