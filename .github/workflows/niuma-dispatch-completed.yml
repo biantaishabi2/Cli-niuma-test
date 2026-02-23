@@ -20,14 +20,14 @@ jobs:
         with:
           token: ${{ secrets.NIUMA_PAT || github.token }}
 
-      - name: Resolve niuma binary
+      - name: Build niuma from current commit
         run: |
-          niuma_path="$(command -v niuma || true)"
-          if [ -z "$niuma_path" ]; then
-            echo "::error::未找到预装 niuma 二进制，请在 self-hosted runner 安装 niuma"
-            exit 1
-          fi
-          echo "NIUMA_BIN=$niuma_path" >> "$GITHUB_ENV"
+          mkdir -p "$GITHUB_WORKSPACE/.tmp"
+          (
+            cd automation/niuma
+            go build -o "$GITHUB_WORKSPACE/.tmp/niuma" ./cmd/niuma
+          )
+          echo "NIUMA_BIN=$GITHUB_WORKSPACE/.tmp/niuma" >> "$GITHUB_ENV"
 
       - name: Close merged and dispatch wakeup
         env:
