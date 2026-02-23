@@ -7,8 +7,6 @@ on:
     types: [closed]
   repository_dispatch:
     types: [niuma.task.completed]
-  schedule:
-    - cron: "*/5 * * * *" # 每5分钟检查一次
 
 permissions:
   issues: write
@@ -16,14 +14,11 @@ permissions:
 
 jobs:
   orchestrate:
-    if: >
-      (github.event_name == 'issues' && (github.event.label.name == 'bot:orchestrate' || github.event.label.name == 'bot:queued' || github.event.label.name == 'bot:pr-reviewable' || github.event.label.name == 'bot:premerged')) ||
-      (github.event_name == 'repository_dispatch' && github.event.action == 'niuma.task.completed' && github.event.client_payload.event_source == 'close-after-integration-merge') ||
-      (github.event_name == 'pull_request' && github.event.action == 'closed') ||
-      github.event_name == 'schedule'
     uses: biantaishabi2/Cli/.github/workflows/niuma-orchestrate-reusable.yml@master
+    secrets: inherit
     with:
       repo: ${{ github.repository }}
+      store_dir: /home/wangbo/.niuma/stores/Cli-niuma-test
       workflow_source_repo: biantaishabi2/Cli
       workflow_source_ref: master
       repo_dir: "."
@@ -31,4 +26,3 @@ jobs:
       dedup_window_hours: 24
       concurrency_key: "niuma-orchestrate-${repo}"
       enable_local_cleanup: true
-    secrets: inherit
