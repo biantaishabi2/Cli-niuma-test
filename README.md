@@ -17,3 +17,17 @@ Workflows use repository variable `NIUMA_TEST_RUNNER` when provided, otherwise f
 
 - For `stub` mode, default GitHub-hosted runner is enough.
 - For `codex` mode, set `NIUMA_TEST_RUNNER` to your self-hosted runner label where `codex` is installed.
+
+## DAG Service Fixture
+
+Issue `#564` introduces a lightweight DAG service fixture:
+
+- Foundation layer (`A`): `lib/dag_l0_a_foundation.sh`
+- Service layer (`C`): `lib/dag_l1_c_service.sh`
+
+Run tests:
+
+```bash
+bash tests/dag_l1_c_service_unit_test.sh
+bash tests/dag_l1_c_service_bdd_test.sh
+```
