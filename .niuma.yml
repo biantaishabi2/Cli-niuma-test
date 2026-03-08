@@ -18,3 +18,11 @@ workflow:
   max_discussion_rounds: 5
   visible_round_interval: 1
   visible_only_on_diff: true
+
+daemon:
+  poll_interval: "15s"
+  max_concurrent: 1
+  tracker: "github"
+  github:
+    owner: "biantaishabi2"
+    project_number: 2
