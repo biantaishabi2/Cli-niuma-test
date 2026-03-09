@@ -1,23 +1,11 @@
 ai:
-  default: stub
-
+  default: kimi
   providers:
-    stub:
-      cmd: "bash .niuma/mock_provider.sh {prompt_file}"
-      cmd_agent: "bash .niuma/mock_provider.sh {prompt_file}"
-
-  discussion:
-    providers:
-      - stub
-      - stub
-
+    kimi:
+      cmd: "kimi --quiet -p {prompt_file}"
+      cmd_agent: "kimi --quiet -w {workdir} -p {prompt_file}"
   implementation:
-    provider: stub
-
-workflow:
-  max_discussion_rounds: 5
-  visible_round_interval: 1
-  visible_only_on_diff: true
+    provider: kimi
 
 daemon:
   poll_interval: "15s"
