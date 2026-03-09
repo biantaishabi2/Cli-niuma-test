@@ -1,0 +1,84 @@
+name: Integration Test
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+  workflow_dispatch:
+    inputs:
+      test_suite:
+        description: '选择测试套件'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - commands
+          - workflows
+
+permissions:
+  contents: read
+
+jobs:
+  integration-test:
+    name: Run Integration Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup test environment
+        run: |
+          echo "测试环境信息:"
+          echo "OS: $(uname -s)"
+          echo "Shell: $SHELL"
+          echo "Bash version: $BASH_VERSION"
+      
+      - name: Check YAML syntax dependencies
+        run: |
+          # 安装 YAML 验证工具
+          if ! command -v python3 &>/dev/null; then
+            echo "Python3 未安装"
+            exit 1
+          fi
+          
+          # 尝试安装 PyYAML
+          pip3 install pyyaml --quiet 2>/dev/null || echo "PyYAML 安装失败，将使用基础验证"
+      
+      - name: Make test scripts executable
+        run: |
+          chmod +x tests/run_all_tests.sh
+          chmod +x tests/integration/*.sh
+      
+      - name: Run integration tests
+        run: |
+          TEST_SUITE="${{ github.event.inputs.test_suite || 'all' }}"
+          echo "运行测试套件: $TEST_SUITE"
+          
+          if [[ "$TEST_SUITE" == "all" ]]; then
+            ./tests/run_all_tests.sh --tap
+          else
+            ./tests/run_all_tests.sh --suite "$TEST_SUITE" --tap
+          fi
+        shell: bash
+        continue-on-error: false
+      
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ github.run_id }}
+          path: |
+            tests/
+          retention-days: 7
+      
+      - name: Test summary
+        if: always()
+        run: |
+          echo "## 集成测试总结" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- 触发事件: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- 测试套件: ${{ github.event.inputs.test_suite || 'all' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- 运行时间: ${{ github.run_started_at }}" >> $GITHUB_STEP_SUMMARY
