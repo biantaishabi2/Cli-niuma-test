@@ -17,3 +17,13 @@ Workflows use repository variable `NIUMA_TEST_RUNNER` when provided, otherwise f
 
 - For `stub` mode, default GitHub-hosted runner is enough.
 - For `codex` mode, set `NIUMA_TEST_RUNNER` to your self-hosted runner label where `codex` is installed.
+
+## Daemon Polling Fixture
+
+This repository includes daemon polling fixture config in `.niuma.yml`.
+
+Run the local guard test:
+
+```bash
+bash tests/daemon_polling_config_test.sh
+```
