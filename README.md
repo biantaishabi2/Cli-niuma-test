@@ -1,29 +1,8 @@
-# Cli-niuma-test
+# Niuma Test
 
-Niuma workflow integration/regression testbed repository.
+配置文件: config.json
+工具脚本: utils.sh
 
-## Provider Modes
+## 使用方法
 
-Workflows support two provider modes via repository variable `NIUMA_TEST_PROVIDER_MODE`:
-
-- `stub` (default): uses `.niuma/mock_provider.sh` for deterministic smoke testing.
-- `codex`: uses real `codex` provider (`codex exec ...`).
-
-If `NIUMA_TEST_PROVIDER_MODE=codex`, runner must have `codex` installed; otherwise workflow exits with clear error.
-
-## Runner Selection
-
-Workflows use repository variable `NIUMA_TEST_RUNNER` when provided, otherwise fallback to `ubuntu-latest`.
-
-- For `stub` mode, default GitHub-hosted runner is enough.
-- For `codex` mode, set `NIUMA_TEST_RUNNER` to your self-hosted runner label where `codex` is installed.
-
-## Daemon Polling Fixture
-
-This repository includes daemon polling fixture config in `.niuma.yml`.
-
-Run the local guard test:
-
-```bash
-bash tests/daemon_polling_config_test.sh
-```
+bash utils.sh
